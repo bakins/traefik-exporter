@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -37,17 +36,6 @@ type traefikHealth struct {
 	AverageResponseTimeSec float64 `json:"average_response_time_sec"`
 }
 
-func newCounter(metricName string, docString string, constLabels prometheus.Labels) prometheus.Counter {
-	return prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace:   namespace,
-			Name:        metricName,
-			Help:        docString,
-			ConstLabels: constLabels,
-		},
-	)
-}
-
 func newGauge(metricName string, docString string, constLabels prometheus.Labels) prometheus.Gauge {
 	return prometheus.NewGauge(
 		prometheus.GaugeOpts{
@@ -60,19 +48,19 @@ func newGauge(metricName string, docString string, constLabels prometheus.Labels
 }
 
 var (
-	traefik_up                         = newGauge("up", "Is traefik up ?", nil)
-	metric_uptime                      = newGauge("uptime", "Current Traefik uptime", nil)
-	metric_request_response_time_total = newGauge("request_response_time_total", "Total response time of Traefik requests", nil)
-	metric_request_response_time_avg   = newGauge("request_response_time_avg", "Average response time of Traefik requests", nil)
+	traefikUp                      = newGauge("up", "Is traefik up ?", nil)
+	metricUptime                   = newGauge("uptime", "Current Traefik uptime", nil)
+	metricRequestResponseTimeTotal = newGauge("request_response_time_total", "Total response time of Traefik requests", nil)
+	metricRequestResponseTimeAvg   = newGauge("request_response_time_avg", "Average response time of Traefik requests", nil)
 
 	// Labeled metrics
 	// Set at runtime
-	metric_request_status_count_current = map[string]prometheus.Gauge{} // newGauge("request_count_current", "Number of request Traefik is handling", nil)
-	metric_request_status_count_total   = map[string]prometheus.Gauge{} // newGauge("request_count_total", "Number of request handled by Traefik", nil)
+	metricRequestStatusCountCurrent = map[string]prometheus.Gauge{} // newGauge("request_count_current", "Number of request Traefik is handling", nil)
+	metricRequestStatusCountTotal   = map[string]prometheus.Gauge{} // newGauge("request_count_total", "Number of request handled by Traefik", nil)
 )
 
 func init() {
-	traefik_up.Set(0)
+	traefikUp.Set(0)
 }
 
 // Exporter collects Traefik stats from the given hostname and exports them using
@@ -108,15 +96,15 @@ func NewExporter(uri string, timeout time.Duration) *Exporter {
 // Describe describes all the metrics ever exported by the Traefik exporter. It
 // implements prometheus.Collector.
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
-	ch <- metric_uptime.Desc()
-	ch <- traefik_up.Desc()
-	ch <- metric_request_response_time_total.Desc()
-	ch <- metric_request_response_time_avg.Desc()
+	ch <- metricUptime.Desc()
+	ch <- traefikUp.Desc()
+	ch <- metricRequestResponseTimeTotal.Desc()
+	ch <- metricRequestResponseTimeAvg.Desc()
 
-	for _, metric := range metric_request_status_count_current {
+	for _, metric := range metricRequestStatusCountCurrent {
 		ch <- metric.Desc()
 	}
-	for _, metric := range metric_request_status_count_total {
+	for _, metric := range metricRequestStatusCountTotal {
 		ch <- metric.Desc()
 	}
 }
@@ -129,20 +117,20 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 
 	if err := e.scrape(); err != nil {
 		log.Error(err)
-		traefik_up.Set(0)
-		ch <- traefik_up
+		traefikUp.Set(0)
+		ch <- traefikUp
 		return
 	}
 
-	ch <- traefik_up
-	ch <- metric_uptime
-	ch <- metric_request_response_time_total
-	ch <- metric_request_response_time_avg
+	ch <- traefikUp
+	ch <- metricUptime
+	ch <- metricRequestResponseTimeTotal
+	ch <- metricRequestResponseTimeAvg
 
-	for _, metric := range metric_request_status_count_current {
+	for _, metric := range metricRequestStatusCountCurrent {
 		ch <- metric
 	}
-	for _, metric := range metric_request_status_count_total {
+	for _, metric := range metricRequestStatusCountTotal {
 		ch <- metric
 	}
 }
@@ -150,42 +138,42 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 func (e *Exporter) scrape() error {
 	resp, err := e.client.Get(e.URI)
 	if err != nil {
-		return errors.New(fmt.Sprintf("Can't scrape Traefik: %v", err))
+		return fmt.Errorf("Can't scrape Traefik: %v", err)
 	}
 	defer resp.Body.Close()
 	if !(resp.StatusCode >= 200 && resp.StatusCode < 300) {
-		return errors.New(fmt.Sprintf("Can't scrape Traefik: status %d", resp.StatusCode))
+		return fmt.Errorf("Can't scrape Traefik: status %d", resp.StatusCode)
 	}
 
 	var data traefikHealth
 	decoder := json.NewDecoder(resp.Body)
 	if err := decoder.Decode(&data); err != nil {
-		return errors.New(fmt.Sprintf("Can't scrape Traefik: json.Unmarshal %v", err))
+		return fmt.Errorf("Can't scrape Traefik: json.Unmarshal %v", err)
 	}
 
-	traefik_up.Set(1)
-	metric_uptime.Set(data.UpTimeSec)
-	metric_request_response_time_total.Set(data.TotalResponseTimeSec)
-	metric_request_response_time_avg.Set(data.AverageResponseTimeSec)
+	traefikUp.Set(1)
+	metricUptime.Set(data.UpTimeSec)
+	metricRequestResponseTimeTotal.Set(data.TotalResponseTimeSec)
+	metricRequestResponseTimeAvg.Set(data.AverageResponseTimeSec)
 
 	// Current request count, labeled by statusCode
 	// Must be reset for missing status code metrics in data
-	for _, metric := range metric_request_status_count_current {
+	for _, metric := range metricRequestStatusCountCurrent {
 		metric.Set(0)
 	}
 	for statusCode, nbr := range data.StatusCodeCount {
-		if _, ok := metric_request_status_count_current[statusCode]; ok == false {
-			metric_request_status_count_current[statusCode] = newGauge("request_count_current", "Number of request handled by Traefik", prometheus.Labels{"statusCode": statusCode})
+		if _, ok := metricRequestStatusCountCurrent[statusCode]; !ok {
+			metricRequestStatusCountCurrent[statusCode] = newGauge("request_count_current", "Number of request handled by Traefik", prometheus.Labels{"statusCode": statusCode})
 		}
-		metric_request_status_count_current[statusCode].Set(nbr)
+		metricRequestStatusCountCurrent[statusCode].Set(nbr)
 	}
 
 	// Total request count, labeled by statusCode
 	for statusCode, nbr := range data.TotalStatusCodeCount {
-		if _, ok := metric_request_status_count_total[statusCode]; ok == false {
-			metric_request_status_count_total[statusCode] = newGauge("request_count_total", "Number of request handled by Traefik", prometheus.Labels{"statusCode": statusCode})
+		if _, ok := metricRequestStatusCountTotal[statusCode]; !ok {
+			metricRequestStatusCountTotal[statusCode] = newGauge("request_count_total", "Number of request handled by Traefik", prometheus.Labels{"statusCode": statusCode})
 		}
-		metric_request_status_count_total[statusCode].Set(nbr)
+		metricRequestStatusCountTotal[statusCode].Set(nbr)
 	}
 
 	return nil
