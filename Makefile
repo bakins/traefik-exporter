@@ -11,12 +11,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO    := GO15VENDOREXPERIMENT=1 go
+GO    := go
 pkgs   = $(shell $(GO) list ./... | grep -v /vendor/)
 
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
-DOCKER_IMAGE_NAME       ?= iadvize/traefik-exporter
+DOCKER_IMAGE_NAME       ?= quay.io/bakins/traefik-exporter
 DOCKER_IMAGE_TAG        ?= $(shell cat VERSION)
 
 
@@ -40,11 +40,24 @@ vet:
 
 build:
 	@echo ">> building binaries"
-	@$(GO) build .
+	@$(GO) build -o traefik-exporter .
 
-docker:
+linux:
+	@echo ">> building linux binary using docker"
+	docker run -v `pwd`:/go/src/app \
+    -e CGO_ENABLED=0 \
+    -e GOOS=linux \
+    -e GOARCH=amd64 \
+    -w /go/src/app \
+    golang:1.7.4 \
+    make build
+
+docker: linux
 	@echo ">> building docker image"
 	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
+push: docker
+	@echo ">> pushing docker image"
+	@docker push "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)"
 
 .PHONY: all style format build test vet tarball docker
