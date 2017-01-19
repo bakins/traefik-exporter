@@ -1,5 +1,6 @@
 /.build
 /.release
 /.tarballs
-/traefik_exporter
+traefik-exporter
+traefik_exporter
 *.tar.gz

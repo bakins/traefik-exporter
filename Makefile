@@ -38,12 +38,9 @@ vet:
 	@echo ">> vetting code"
 	@$(GO) vet $(pkgs)
 
-deps:
-	@$(GO) get ./...
-
-build: deps
+build:
 	@echo ">> building binaries"
-	@$(GO) build traefik_exporter.go
+	@$(GO) build .
 
 docker:
 	@echo ">> building docker image"
